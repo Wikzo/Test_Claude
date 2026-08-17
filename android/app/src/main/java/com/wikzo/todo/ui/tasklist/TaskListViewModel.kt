@@ -4,16 +4,20 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wikzo.todo.data.local.DeviceGroupStore
 import com.wikzo.todo.data.model.Task
+import com.wikzo.todo.data.repository.StreakRepository
 import com.wikzo.todo.data.repository.SyncGroupRepository
 import com.wikzo.todo.data.repository.TaskRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -24,7 +28,18 @@ data class TaskListUiState(
     val errorMessage: String? = null,
     val isOffline: Boolean = false,
     val isSyncing: Boolean = false,
+    val incompleteCount: Int = 0,
 )
+
+/**
+ * One-shot "the list was just fully cleared" event -- carries the resulting streak
+ * count (see [StreakRepository.recordAllTasksCleared]) so the UI can distinguish a
+ * first-time clear from an ongoing streak without a second round-trip. Delivered
+ * over a [Channel] rather than folded into [TaskListUiState] so it fires exactly
+ * once per clear and never replays on recomposition, process death + state
+ * restoration, or a config change re-collecting the state flow.
+ */
+data class CelebrationEvent(val streak: Int)
 
 /**
  * Incomplete tasks first, then by priority (HIGH, MEDIUM, LOW -- the enum's
@@ -41,13 +56,28 @@ private val taskComparator = compareBy<Task>(
 class TaskListViewModel @Inject constructor(
     private val taskRepository: TaskRepository,
     private val syncGroupRepository: SyncGroupRepository,
+    private val streakRepository: StreakRepository,
     private val deviceGroupStore: DeviceGroupStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(TaskListUiState())
     val uiState: StateFlow<TaskListUiState> = _uiState.asStateFlow()
 
+    // Channel, not a SharedFlow/StateFlow: a celebration is a one-shot event, and
+    // Channel.receiveAsFlow() only delivers each element to a single collector once,
+    // which is exactly what a "list just cleared" burst should do -- a SharedFlow
+    // would replay (or re-deliver to a freshly-recreated collector on rotation)
+    // depending on how it's configured, and a plain state flag would fire again on
+    // every recomposition that reads it until something clears it back to false.
+    private val _celebrationEvents = Channel<CelebrationEvent>(Channel.BUFFERED)
+    val celebrationEvents: Flow<CelebrationEvent> = _celebrationEvents.receiveAsFlow()
+
     private var groupId: String? = null
+
+    // Null until the first real snapshot arrives, so the very first emission --
+    // which may itself already be an empty list -- never reads as a completion
+    // transition. Only set once we've actually seen at least one snapshot.
+    private var previousIncompleteCount: Int? = null
 
     init {
         viewModelScope.launch {
@@ -66,16 +96,30 @@ class TaskListViewModel @Inject constructor(
                     .distinctUntilChanged()
                     .flatMapLatest { id ->
                         groupId = id
+                        // A newly-observed group (e.g. right after pairing) is a
+                        // fresh context for the >0-to-0 transition below -- don't
+                        // let a stale count from the previous group carry over.
+                        previousIncompleteCount = null
                         taskRepository.observeTasks(id)
                     }
                     .collect { snapshot ->
+                        val sortedTasks = snapshot.tasks.sortedWith(taskComparator)
+                        val incompleteCount = sortedTasks.count { !it.completed }
+                        val previousCount = previousIncompleteCount
+                        previousIncompleteCount = incompleteCount
+
                         _uiState.update {
                             it.copy(
                                 isLoading = false,
-                                tasks = snapshot.tasks.sortedWith(taskComparator),
+                                tasks = sortedTasks,
                                 isOffline = snapshot.isFromCache,
                                 isSyncing = snapshot.hasPendingWrites,
+                                incompleteCount = incompleteCount,
                             )
+                        }
+
+                        if (previousCount != null && previousCount > 0 && incompleteCount == 0) {
+                            onAllTasksCleared()
                         }
                     }
             } catch (e: CancellationException) {
@@ -92,6 +136,30 @@ class TaskListViewModel @Inject constructor(
         val id = groupId ?: return
         viewModelScope.launch {
             taskRepository.setCompleted(id, task, !task.completed)
+        }
+    }
+
+    /**
+     * Fired once per "incomplete count just dropped from >0 to 0" -- the confetti
+     * celebration and the streak bump are conceptually the same moment, so they're
+     * kicked off from the same call site rather than duplicating the transition
+     * detection in two places.
+     */
+    private fun onAllTasksCleared() {
+        val id = groupId ?: return
+        viewModelScope.launch {
+            val streak = try {
+                streakRepository.recordAllTasksCleared(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // The confetti is still worth showing even if the streak write
+                // failed (e.g. offline) -- 0 reads as "no streak info available"
+                // rather than surfacing a write error for what is, after all, a
+                // whimsical extra rather than core task data.
+                0
+            }
+            _celebrationEvents.send(CelebrationEvent(streak))
         }
     }
 

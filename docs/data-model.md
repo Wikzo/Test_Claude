@@ -81,6 +81,12 @@ data class Task(
 )
 
 enum class Priority { HIGH, MEDIUM, LOW }
+
+/** Mirrors `syncGroups/{groupId}/streaks/summary`. See StreakRepository for the update algorithm. */
+data class StreakSummary(
+    val currentStreak: Int = 0,
+    val lastCompletedAllAt: Timestamp? = null,
+)
 ```
 
 ## TypeScript representation (web + functions)
