@@ -102,4 +102,9 @@ export interface Task {
   createdByUid: string;
   updatedByUid: string;
 }
+
+export interface StreakSummary {
+  currentStreak: number;
+  lastCompletedAllAt: Timestamp | null;
+}
 ```

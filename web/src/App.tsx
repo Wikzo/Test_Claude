@@ -1,11 +1,17 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import confetti from "canvas-confetti";
 import { AddEditTaskForm } from "./features/tasks/AddEditTaskForm";
 import { TaskList } from "./features/tasks/TaskList";
 import { useTasks } from "./features/tasks/useTasks";
 import { PairingPanel } from "./features/pairing/PairingPanel";
+import { Mascot } from "./features/mascot/Mascot";
 import type { Task } from "./types/task";
 
 type FormState = { mode: "closed" } | { mode: "add" } | { mode: "edit"; task: Task };
+
+// How long the mascot's "celebrating" state (and its streak badge) stays up
+// after the list is fully cleared, before settling back to idle/happy.
+const CELEBRATION_DURATION_MS = 2800;
 
 function App() {
   const {
@@ -17,11 +23,37 @@ function App() {
     toggleCompleted,
     deleteTask,
     refreshGroup,
+    remaining,
+    completedCount,
+    streak,
+    celebrationToken,
   } = useTasks();
   const [formState, setFormState] = useState<FormState>({ mode: "closed" });
   const [pairingOpen, setPairingOpen] = useState(false);
+  const [celebrating, setCelebrating] = useState(false);
 
-  const remaining = tasks.filter((t) => !t.completed).length;
+  // celebrationToken is a one-shot signal: skip the effect's initial run (it
+  // fires once on mount with the token's starting value) so confetti only
+  // ever plays for a genuine "just cleared the list" event, never on load.
+  const isFirstCelebrationRender = useRef(true);
+  useEffect(() => {
+    if (isFirstCelebrationRender.current) {
+      isFirstCelebrationRender.current = false;
+      return;
+    }
+
+    confetti({
+      particleCount: 90,
+      spread: 70,
+      startVelocity: 38,
+      origin: { y: 0.3 },
+      ticks: 180,
+    });
+
+    setCelebrating(true);
+    const timeout = setTimeout(() => setCelebrating(false), CELEBRATION_DURATION_MS);
+    return () => clearTimeout(timeout);
+  }, [celebrationToken]);
 
   const closeForm = () => setFormState({ mode: "closed" });
 
@@ -39,17 +71,25 @@ function App() {
     <div className="min-h-full bg-slate-50">
       <div className="mx-auto flex max-w-xl flex-col gap-6 px-4 py-10 sm:py-14">
         <header className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-              Todo
-            </h1>
-            <p className="mt-0.5 text-sm text-slate-500">
-              {loading
-                ? "Loading..."
-                : remaining === 0
-                  ? "All caught up"
-                  : `${remaining} task${remaining === 1 ? "" : "s"} remaining`}
-            </p>
+          <div className="flex items-center gap-3">
+            <Mascot
+              remaining={remaining}
+              completedCount={completedCount}
+              celebrating={celebrating}
+              streak={streak}
+            />
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+                Todo
+              </h1>
+              <p className="mt-0.5 text-sm text-slate-500">
+                {loading
+                  ? "Loading..."
+                  : remaining === 0
+                    ? "All caught up"
+                    : `${remaining} task${remaining === 1 ? "" : "s"} remaining`}
+              </p>
+            </div>
           </div>
 
           {formState.mode === "closed" && !pairingOpen && groupId && (

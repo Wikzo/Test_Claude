@@ -23,3 +23,25 @@ body {
   background-color: #f8fafc;
   color: #0f172a;
 }
+
+/* Very slow, barely-there idle bob for the mascot -- a subtle "still alive"
+   cue, not an attention-grabbing animation. */
+@keyframes mascot-idle-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+.animate-mascot-bob {
+  animation: mascot-idle-bob 4.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-mascot-bob {
+    animation: none;
+  }
+}
