@@ -74,6 +74,13 @@ dependencies {
     kapt("com.google.dagger:hilt-compiler:2.51.1")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 
+    // WorkManager (due-date reminder reconciliation) + its Hilt integration,
+    // so ReminderReconcileWorker gets TaskRepository/DeviceGroupStore injected
+    // via HiltWorkerFactory instead of a hand-rolled WorkerFactory.
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation("androidx.hilt:hilt-work:1.2.0")
+    kapt("androidx.hilt:hilt-compiler:1.2.0")
+
     // Firebase
     implementation(platform("com.google.firebase:firebase-bom:33.1.0"))
     implementation("com.google.firebase:firebase-firestore-ktx")

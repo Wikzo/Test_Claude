@@ -1,5 +1,6 @@
 package com.wikzo.todo.data.repository
 
+import android.content.Context
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
@@ -7,6 +8,8 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.MetadataChanges
 import com.wikzo.todo.data.model.Priority
 import com.wikzo.todo.data.model.Task
+import com.wikzo.todo.notifications.ReminderScheduler
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -33,11 +36,20 @@ data class TasksSnapshot(
  * ("high"/"medium"/"low") rather than the enum constant name Firestore's default enum
  * mapping would expect. So reads/writes are mapped by hand via [toTask] and the
  * per-method field maps below, using [Priority.firestoreValue] / [Priority.fromFirestoreValue].
+ *
+ * This is also the single choke point for every task mutation (add/update/complete/
+ * delete), which is deliberately where local due-date reminders are kept in sync via
+ * [ReminderScheduler] -- rather than duplicating that bookkeeping in every ViewModel
+ * that can change a task, one call site covers the add-screen save, the list screen's
+ * checkbox toggle, and delete alike. [Context] is injected the same way
+ * [com.wikzo.todo.data.local.DeviceGroupStore] already does it elsewhere in this
+ * layer, via Hilt's `@ApplicationContext`.
  */
 @Singleton
 class TaskRepository @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val auth: FirebaseAuth,
+    @ApplicationContext private val context: Context,
 ) {
 
     private fun tasksCollection(groupId: String) =
@@ -75,6 +87,16 @@ class TaskRepository @Inject constructor(
         return if (snapshot.exists()) snapshot.toTask() else null
     }
 
+    /**
+     * One-shot fetch of every task in the group -- as opposed to [observeTasks]'s
+     * live listener -- used by [com.wikzo.todo.notifications.ReminderReconcileWorker],
+     * which runs headless and briefly and has no need to stay subscribed.
+     */
+    suspend fun getAllTasks(groupId: String): List<Task> {
+        val snapshot = tasksCollection(groupId).get().await()
+        return snapshot.documents.map { it.toTask() }
+    }
+
     suspend fun addTask(groupId: String, task: Task) {
         val uid = auth.currentUser?.uid.orEmpty()
         val data = hashMapOf<String, Any?>(
@@ -90,7 +112,8 @@ class TaskRepository @Inject constructor(
             "createdByUid" to uid,
             "updatedByUid" to uid,
         )
-        tasksCollection(groupId).add(data).await()
+        val docRef = tasksCollection(groupId).add(data).await()
+        rescheduleReminder(task.copy(id = docRef.id))
     }
 
     suspend fun updateTask(groupId: String, task: Task) {
@@ -108,13 +131,15 @@ class TaskRepository @Inject constructor(
             "updatedByUid" to uid,
         )
         tasksCollection(groupId).document(task.id).update(data).await()
+        rescheduleReminder(task)
     }
 
     suspend fun deleteTask(groupId: String, taskId: String) {
         tasksCollection(groupId).document(taskId).delete().await()
+        ReminderScheduler.cancelReminder(context, taskId)
     }
 
-    suspend fun setCompleted(groupId: String, taskId: String, completed: Boolean) {
+    suspend fun setCompleted(groupId: String, task: Task, completed: Boolean) {
         val uid = auth.currentUser?.uid.orEmpty()
         val data = hashMapOf<String, Any?>(
             "completed" to completed,
@@ -122,7 +147,24 @@ class TaskRepository @Inject constructor(
             "updatedAt" to FieldValue.serverTimestamp(),
             "updatedByUid" to uid,
         )
-        tasksCollection(groupId).document(taskId).update(data).await()
+        tasksCollection(groupId).document(task.id).update(data).await()
+        rescheduleReminder(task.copy(completed = completed))
+    }
+
+    /**
+     * Keeps [task]'s local reminder alarm in sync with its just-written state:
+     * cancels it if the task is completed or has no (or a past) due date,
+     * otherwise (re)schedules it -- [ReminderScheduler.scheduleReminder] uses the
+     * same request code every time, so this transparently replaces any
+     * previously-scheduled alarm for the same task rather than stacking one.
+     */
+    private fun rescheduleReminder(task: Task) {
+        val dueMillis = task.dueDate?.toDate()?.time
+        if (task.completed || dueMillis == null || dueMillis <= System.currentTimeMillis()) {
+            ReminderScheduler.cancelReminder(context, task.id)
+        } else {
+            ReminderScheduler.scheduleReminder(context, task.id, task.title, dueMillis)
+        }
     }
 
     private fun DocumentSnapshot.toTask(): Task = Task(

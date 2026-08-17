@@ -1,8 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- Reminder notifications: runtime-requested on API 33+ (see MainActivity). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Exact-time due-date alarms. SCHEDULE_EXACT_ALARM (not USE_EXACT_ALARM) --
+         see ReminderScheduler's kdoc for why. Auto-granted on API 31-32; on
+         API 33+ the user grants it once via system Settings > Alarms & reminders. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
+    <!-- Lets BootReceiver re-establish reminders after a reboot. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- Camera is only used for the QR-scan convenience when joining a paired
          device; manual 6-digit code entry always works, so it's not required. -->
@@ -28,6 +40,39 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Fires when a task's due-date alarm goes off (AlarmManager ->
+             ReminderScheduler). Only ever targeted by this app's own
+             PendingIntents, so it is not exported. -->
+        <receiver
+            android:name=".notifications.ReminderReceiver"
+            android:exported="false" />
+
+        <!-- Re-establishes reminder reconciliation after a reboot (see
+             BootReceiver's kdoc). Must be exported for the system to deliver
+             BOOT_COMPLETED -- no other receiver here needs that. -->
+        <receiver
+            android:name=".notifications.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Disables WorkManager's default auto-initialization so that
+             TodoApplication's Configuration.Provider (which supplies a
+             Hilt-aware WorkerFactory for ReminderReconcileWorker) is used
+             instead. See TodoApplication's kdoc. -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup.InitializationProvider"
+                tools:node="remove" />
+        </provider>
     </application>
 
 </manifest>

@@ -91,7 +91,7 @@ class TaskListViewModel @Inject constructor(
     fun toggleCompleted(task: Task) {
         val id = groupId ?: return
         viewModelScope.launch {
-            taskRepository.setCompleted(id, task.id, !task.completed)
+            taskRepository.setCompleted(id, task, !task.completed)
         }
     }
 
