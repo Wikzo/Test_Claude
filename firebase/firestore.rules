@@ -3,11 +3,14 @@ rules_version = '2';
 // See /docs/data-model.md for the schema this enforces.
 //
 // Membership model: a client may read/write a sync group's tasks only if it has
-// a members/{uid} doc under that group. Membership itself is never writable by
-// clients directly -- it is only ever created by the createPairingCode /
-// claimPairingCode Cloud Functions (Admin SDK, which bypasses these rules), so
-// joining a group always goes through the single, auditable pairing flow.
-// pairingCodes documents are likewise fully server-only.
+// a members/{uid} doc under that group. A device may self-bootstrap membership
+// in a group ONLY at the moment it creates that group (proven by matching
+// syncGroups/{groupId}.createdByUid, which is itself locked at creation time
+// and never updatable). Joining any OTHER, already-existing group only ever
+// happens via the createPairingCode / claimPairingCode Cloud Functions (Admin
+// SDK, which bypasses these rules) -- that's what makes pairing the single,
+// auditable way to link a second device. pairingCodes documents are likewise
+// fully server-only.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -18,13 +21,19 @@ service cloud.firestore {
 
     match /syncGroups/{groupId} {
       allow read: if isMember(groupId);
-      // A freshly signed-in (anonymous) device creates its own initial group.
-      allow create: if request.auth != null;
+      // A freshly signed-in (anonymous) device creates its own initial group,
+      // stamping itself as the creator.
+      allow create: if request.auth != null &&
+        request.resource.data.createdByUid == request.auth.uid;
       allow update, delete: if false;
 
       match /members/{uid} {
         allow read: if isMember(groupId);
-        allow write: if false; // Cloud Functions (Admin SDK) only
+        // Self-bootstrap: a device may add itself as a member only of the
+        // group it just created -- not of any other existing group.
+        allow create: if request.auth != null && request.auth.uid == uid &&
+          get(/databases/$(database)/documents/syncGroups/$(groupId)).data.createdByUid == request.auth.uid;
+        allow update, delete: if false; // Cloud Functions (Admin SDK) only from here on
       }
 
       match /tasks/{taskId} {
