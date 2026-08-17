@@ -1,0 +1,44 @@
+rules_version = '2';
+
+// See /docs/data-model.md for the schema this enforces.
+//
+// Membership model: a client may read/write a sync group's tasks only if it has
+// a members/{uid} doc under that group. Membership itself is never writable by
+// clients directly -- it is only ever created by the createPairingCode /
+// claimPairingCode Cloud Functions (Admin SDK, which bypasses these rules), so
+// joining a group always goes through the single, auditable pairing flow.
+// pairingCodes documents are likewise fully server-only.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isMember(groupId) {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/syncGroups/$(groupId)/members/$(request.auth.uid));
+    }
+
+    match /syncGroups/{groupId} {
+      allow read: if isMember(groupId);
+      // A freshly signed-in (anonymous) device creates its own initial group.
+      allow create: if request.auth != null;
+      allow update, delete: if false;
+
+      match /members/{uid} {
+        allow read: if isMember(groupId);
+        allow write: if false; // Cloud Functions (Admin SDK) only
+      }
+
+      match /tasks/{taskId} {
+        allow read, write: if isMember(groupId);
+      }
+
+      match /streaks/{doc} {
+        allow read: if isMember(groupId);
+        allow write: if isMember(groupId);
+      }
+    }
+
+    match /pairingCodes/{code} {
+      allow read, write: if false; // Cloud Functions (Admin SDK) only
+    }
+  }
+}

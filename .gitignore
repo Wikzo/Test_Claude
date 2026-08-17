@@ -1,0 +1,28 @@
+# Android
+/android/.gradle/
+/android/local.properties
+/android/.idea/
+/android/**/build/
+/android/**/.cxx/
+*.iml
+.DS_Store
+
+# Web
+/web/node_modules/
+/web/dist/
+/web/.vite/
+
+# Firebase
+/firebase/functions/node_modules/
+/firebase/functions/lib/
+/firebase/.firebase/
+/firebase/firebase-debug.log
+/firebase/firebase-debug.*.log
+/firebase/ui-debug.log
+
+# General
+.env
+.env.local
+
+# Claude Code agent worktrees
+.claude/
