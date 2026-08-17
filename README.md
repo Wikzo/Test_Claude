@@ -13,7 +13,7 @@ Build is in progress, phase by phase:
 
 - [x] Phase 0 — repo scaffolding
 - [x] Phase 1 — core task CRUD (Android + web)
-- [ ] Phase 2 — offline-first persistence
+- [x] Phase 2 — offline-first persistence
 - [ ] Phase 3 — device pairing
 - [ ] Phase 4 — reminders/notifications
 - [ ] Phase 5 — whimsical polish

@@ -1,6 +1,10 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentSingleTabManager,
+} from "firebase/firestore";
 
 // TODO: replace with your real Firebase config.
 // Get this from Firebase Console -> Project settings -> General -> Your apps -> Web app.
@@ -16,4 +20,12 @@ const firebaseConfig = {
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+
+// Offline-first: cache reads/writes locally and sync when connectivity allows.
+// Single-tab manager is enough for v1 -- this is a personal app, not one built
+// to have several browser tabs of the same account fighting over one cache.
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentSingleTabManager(undefined),
+  }),
+});

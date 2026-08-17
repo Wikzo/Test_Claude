@@ -11,6 +11,8 @@ interface UseTasksResult {
   tasks: Task[];
   loading: boolean;
   groupId: string | null;
+  isOffline: boolean;
+  isSyncing: boolean;
   toggleCompleted: (task: Task) => Promise<void>;
   deleteTask: (taskId: string) => Promise<void>;
 }
@@ -19,6 +21,8 @@ export function useTasks(): UseTasksResult {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [groupId, setGroupId] = useState<string | null>(null);
+  const [isOffline, setIsOffline] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -29,9 +33,11 @@ export function useTasks(): UseTasksResult {
       .then((id) => {
         if (!mounted.current) return;
         setGroupId(id);
-        unsubscribe = subscribeToTasks(id, (nextTasks) => {
+        unsubscribe = subscribeToTasks(id, (snapshot) => {
           if (!mounted.current) return;
-          setTasks(nextTasks);
+          setTasks(snapshot.tasks);
+          setIsOffline(snapshot.isFromCache);
+          setIsSyncing(snapshot.hasPendingWrites);
           setLoading(false);
         });
       })
@@ -62,5 +68,5 @@ export function useTasks(): UseTasksResult {
     [groupId],
   );
 
-  return { tasks, loading, groupId, toggleCompleted, deleteTask };
+  return { tasks, loading, groupId, isOffline, isSyncing, toggleCompleted, deleteTask };
 }

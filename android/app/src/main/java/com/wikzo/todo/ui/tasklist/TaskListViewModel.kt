@@ -18,6 +18,8 @@ data class TaskListUiState(
     val isLoading: Boolean = true,
     val tasks: List<Task> = emptyList(),
     val errorMessage: String? = null,
+    val isOffline: Boolean = false,
+    val isSyncing: Boolean = false,
 )
 
 /**
@@ -47,9 +49,14 @@ class TaskListViewModel @Inject constructor(
             try {
                 val id = syncGroupRepository.ensureLocalGroup()
                 groupId = id
-                taskRepository.observeTasks(id).collect { tasks ->
+                taskRepository.observeTasks(id).collect { snapshot ->
                     _uiState.update {
-                        it.copy(isLoading = false, tasks = tasks.sortedWith(taskComparator))
+                        it.copy(
+                            isLoading = false,
+                            tasks = snapshot.tasks.sortedWith(taskComparator),
+                            isOffline = snapshot.isFromCache,
+                            isSyncing = snapshot.hasPendingWrites,
+                        )
                     }
                 }
             } catch (e: CancellationException) {

@@ -4,6 +4,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.MetadataChanges
 import com.wikzo.todo.data.model.Priority
 import com.wikzo.todo.data.model.Task
 import kotlinx.coroutines.channels.awaitClose
@@ -12,6 +13,17 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/**
+ * A snapshot of the task list plus its sync state, straight from Firestore's
+ * listener metadata -- lets the UI show an "offline" / "syncing" indicator
+ * without the offline-first behavior being a silent, invisible cache.
+ */
+data class TasksSnapshot(
+    val tasks: List<Task>,
+    val isFromCache: Boolean,
+    val hasPendingWrites: Boolean,
+)
 
 /**
  * Firestore CRUD against `syncGroups/{groupId}/tasks`, per /docs/data-model.md.
@@ -31,15 +43,28 @@ class TaskRepository @Inject constructor(
     private fun tasksCollection(groupId: String) =
         firestore.collection("syncGroups").document(groupId).collection("tasks")
 
-    /** Live view of every task in the group, updated on every remote/local change. */
-    fun observeTasks(groupId: String): Flow<List<Task>> = callbackFlow {
+    /**
+     * Live view of every task in the group plus sync metadata, updated on every
+     * remote/local change (including local writes that haven't reached the server
+     * yet, and the initial emission from the offline cache before a listener is
+     * established with the backend).
+     */
+    fun observeTasks(groupId: String): Flow<TasksSnapshot> = callbackFlow {
         val registration = tasksCollection(groupId)
-            .addSnapshotListener { snapshot, error ->
+            .addSnapshotListener(MetadataChanges.INCLUDE) { snapshot, error ->
                 if (error != null) {
                     close(error)
                     return@addSnapshotListener
                 }
-                trySend(snapshot?.documents.orEmpty().map { it.toTask() })
+                if (snapshot != null) {
+                    trySend(
+                        TasksSnapshot(
+                            tasks = snapshot.documents.map { it.toTask() },
+                            isFromCache = snapshot.metadata.isFromCache,
+                            hasPendingWrites = snapshot.metadata.hasPendingWrites(),
+                        ),
+                    )
+                }
             }
         awaitClose { registration.remove() }
     }

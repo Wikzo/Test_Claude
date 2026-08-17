@@ -22,17 +22,25 @@ function taskDoc(groupId: string, taskId: string) {
   return doc(db, "syncGroups", groupId, "tasks", taskId);
 }
 
+export interface TasksSnapshot {
+  tasks: Task[];
+  isFromCache: boolean;
+  hasPendingWrites: boolean;
+}
+
 /**
- * Subscribes to live updates of every task in the group. Calls `callback`
- * with the full, current task list on every change. Returns an Unsubscribe
- * function — call it on cleanup (e.g. in a useEffect teardown).
+ * Subscribes to live updates of every task in the group, including sync
+ * metadata (so the UI can show an "offline" / "syncing" indicator rather than
+ * offline-first behavior being an invisible cache). Calls `callback` on every
+ * change, including local writes not yet confirmed by the server. Returns an
+ * Unsubscribe function — call it on cleanup (e.g. in a useEffect teardown).
  */
 export function subscribeToTasks(
   groupId: string,
-  callback: (tasks: Task[]) => void,
+  callback: (snapshot: TasksSnapshot) => void,
 ): Unsubscribe {
   const q = query(tasksCollection(groupId), orderBy("createdAt", "asc"));
-  return onSnapshot(q, (snapshot) => {
+  return onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
     const tasks: Task[] = snapshot.docs.map((docSnap) => {
       const data = docSnap.data();
       return {
@@ -50,7 +58,11 @@ export function subscribeToTasks(
         updatedByUid: data.updatedByUid ?? "",
       };
     });
-    callback(tasks);
+    callback({
+      tasks,
+      isFromCache: snapshot.metadata.fromCache,
+      hasPendingWrites: snapshot.metadata.hasPendingWrites,
+    });
   });
 }
 

@@ -7,12 +7,19 @@ import type { Task } from "./types/task";
 type FormState = { mode: "closed" } | { mode: "add" } | { mode: "edit"; task: Task };
 
 function App() {
-  const { tasks, loading, groupId, toggleCompleted, deleteTask } = useTasks();
+  const { tasks, loading, groupId, isOffline, isSyncing, toggleCompleted, deleteTask } =
+    useTasks();
   const [formState, setFormState] = useState<FormState>({ mode: "closed" });
 
   const remaining = tasks.filter((t) => !t.completed).length;
 
   const closeForm = () => setFormState({ mode: "closed" });
+
+  const syncStatus = isSyncing
+    ? "Syncing changes…"
+    : isOffline
+      ? "Offline — changes saved on this device"
+      : null;
 
   return (
     <div className="min-h-full bg-slate-50">
@@ -50,6 +57,12 @@ function App() {
             </button>
           )}
         </header>
+
+        {syncStatus && (
+          <p className="-mt-2 rounded-md bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-500">
+            {syncStatus}
+          </p>
+        )}
 
         {formState.mode === "add" && groupId && (
           <AddEditTaskForm groupId={groupId} onDone={closeForm} onCancel={closeForm} />

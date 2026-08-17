@@ -83,36 +83,65 @@ private fun TaskListScreen(
             }
         },
     ) { innerPadding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            when {
-                uiState.isLoading -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                }
-                uiState.tasks.isEmpty() -> {
-                    EmptyState(modifier = Modifier.align(Alignment.Center))
-                }
-                else -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(vertical = 8.dp),
-                    ) {
-                        items(uiState.tasks, key = { it.id }) { task ->
-                            SwipeToDeleteTaskRow(
-                                task = task,
-                                onClick = { onEditTask(task) },
-                                onToggleCompleted = { onToggleCompleted(task) },
-                                onDelete = { onDeleteTask(task) },
-                            )
+            SyncStatusBanner(isOffline = uiState.isOffline, isSyncing = uiState.isSyncing)
+
+            Box(modifier = Modifier.fillMaxSize()) {
+                when {
+                    uiState.isLoading -> {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    }
+                    uiState.tasks.isEmpty() -> {
+                        EmptyState(modifier = Modifier.align(Alignment.Center))
+                    }
+                    else -> {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(vertical = 8.dp),
+                        ) {
+                            items(uiState.tasks, key = { it.id }) { task ->
+                                SwipeToDeleteTaskRow(
+                                    task = task,
+                                    onClick = { onEditTask(task) },
+                                    onToggleCompleted = { onToggleCompleted(task) },
+                                    onDelete = { onDeleteTask(task) },
+                                )
+                            }
                         }
                     }
                 }
             }
         }
     }
+}
+
+/**
+ * A thin status line reflecting Firestore's snapshot metadata: pending local writes
+ * take priority over the plain "offline" state, since "syncing" is the more useful
+ * thing to tell the user about at that moment (it also covers being online but
+ * mid-flush). Shows nothing once everything is caught up and server-confirmed.
+ */
+@Composable
+private fun SyncStatusBanner(isOffline: Boolean, isSyncing: Boolean) {
+    val message = when {
+        isSyncing -> "Syncing changes…"
+        isOffline -> "Offline — changes saved on this device"
+        else -> null
+    } ?: return
+
+    Text(
+        text = message,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+    )
 }
 
 @Composable
