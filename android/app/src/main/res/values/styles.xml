@@ -1,0 +1,6 @@
+<resources>
+    <!-- The real UI theming lives in Compose (ui/theme). This platform theme only
+         backs the window background / status bar before Compose takes over, and
+         intentionally has no dependency on the AppCompat/Material components libs. -->
+    <style name="Theme.Todo" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
