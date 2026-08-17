@@ -65,6 +65,62 @@ export function formatDueDate(dueDate: Timestamp | null): string | null {
   return `${dateLabel}, ${time}`;
 }
 
+/** True for an incomplete task whose due date has passed. */
+export function isOverdue(task: Task): boolean {
+  if (task.completed || !task.dueDate) return false;
+  return task.dueDate.toMillis() < Date.now();
+}
+
+export interface TaskGroup {
+  key: string;
+  label: string;
+  tasks: Task[];
+}
+
+/**
+ * Buckets tasks into date-aware sections for display -- this is the web
+ * client's stand-in for push notifications (out of scope for v1; Android
+ * owns actual reminders): due-date urgency is surfaced visually instead.
+ * Each bucket is internally sorted the same way as the flat list
+ * (priority, then due date). Empty buckets are omitted.
+ */
+export function groupTasksForDisplay(tasks: Task[]): TaskGroup[] {
+  const completed = tasks.filter((t) => t.completed);
+  const incomplete = tasks.filter((t) => !t.completed);
+
+  const now = Date.now();
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfTomorrow = startOfToday.getTime() + 24 * 60 * 60 * 1000;
+
+  const overdue: Task[] = [];
+  const today: Task[] = [];
+  const upcoming: Task[] = [];
+  const noDueDate: Task[] = [];
+
+  for (const task of incomplete) {
+    const due = task.dueDate?.toMillis();
+    if (due == null) {
+      noDueDate.push(task);
+    } else if (due < now) {
+      overdue.push(task);
+    } else if (due < startOfTomorrow) {
+      today.push(task);
+    } else {
+      upcoming.push(task);
+    }
+  }
+
+  const groups: TaskGroup[] = [];
+  if (overdue.length) groups.push({ key: "overdue", label: "Overdue", tasks: sortTasks(overdue) });
+  if (today.length) groups.push({ key: "today", label: "Today", tasks: sortTasks(today) });
+  if (upcoming.length) groups.push({ key: "upcoming", label: "Upcoming", tasks: sortTasks(upcoming) });
+  if (noDueDate.length) groups.push({ key: "no-due-date", label: "No due date", tasks: sortTasks(noDueDate) });
+  if (completed.length) groups.push({ key: "completed", label: "Completed", tasks: sortTasks(completed) });
+
+  return groups;
+}
+
 export const PRIORITY_LABEL: Record<Priority, string> = {
   high: "High",
   medium: "Medium",

@@ -3,6 +3,7 @@ import {
   PRIORITY_BADGE_CLASS,
   PRIORITY_LABEL,
   formatDueDate,
+  isOverdue,
 } from "./taskUtils";
 
 interface TaskItemProps {
@@ -19,6 +20,7 @@ export function TaskItem({
   onDelete,
 }: TaskItemProps) {
   const dueLabel = formatDueDate(task.dueDate);
+  const overdue = isOverdue(task);
 
   return (
     <li className="group flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition hover:border-slate-300 hover:shadow">
@@ -68,7 +70,11 @@ export function TaskItem({
             {PRIORITY_LABEL[task.priority]}
           </span>
           {dueLabel && (
-            <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+            <span
+              className={`inline-flex items-center gap-1 text-xs ${
+                overdue ? "font-medium text-rose-600" : "text-slate-500"
+              }`}
+            >
               <svg
                 viewBox="0 0 20 20"
                 className="h-3.5 w-3.5"
