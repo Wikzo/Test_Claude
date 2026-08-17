@@ -16,7 +16,7 @@ Build is in progress, phase by phase:
 - [x] Phase 2 — offline-first persistence
 - [x] Phase 3 — device pairing
 - [x] Phase 4 — reminders/notifications
-- [ ] Phase 5 — whimsical polish
+- [x] Phase 5 — whimsical polish
 
 ## Structure
 
