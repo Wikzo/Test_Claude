@@ -16,12 +16,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SwipeToDismissBox
@@ -31,6 +35,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,6 +58,8 @@ import java.time.format.DateTimeFormatter
 fun TaskListScreen(
     onAddTask: () -> Unit,
     onEditTask: (Task) -> Unit,
+    onShowMyCode: () -> Unit,
+    onEnterCode: () -> Unit,
     viewModel: TaskListViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -59,6 +68,8 @@ fun TaskListScreen(
         uiState = uiState,
         onAddTask = onAddTask,
         onEditTask = onEditTask,
+        onShowMyCode = onShowMyCode,
+        onEnterCode = onEnterCode,
         onToggleCompleted = viewModel::toggleCompleted,
         onDeleteTask = viewModel::deleteTask,
     )
@@ -70,12 +81,19 @@ private fun TaskListScreen(
     uiState: TaskListUiState,
     onAddTask: () -> Unit,
     onEditTask: (Task) -> Unit,
+    onShowMyCode: () -> Unit,
+    onEnterCode: () -> Unit,
     onToggleCompleted: (Task) -> Unit,
     onDeleteTask: (Task) -> Unit,
 ) {
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Todo") })
+            TopAppBar(
+                title = { Text("Todo") },
+                actions = {
+                    LinkDeviceAction(onShowMyCode = onShowMyCode, onEnterCode = onEnterCode)
+                },
+            )
         },
         floatingActionButton = {
             FloatingActionButton(onClick = onAddTask) {
@@ -142,6 +160,36 @@ private fun SyncStatusBanner(isOffline: Boolean, isSyncing: Boolean) {
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(horizontal = 16.dp, vertical = 6.dp),
     )
+}
+
+/**
+ * A single top-bar entry point for pairing, covering both directions ("show my
+ * code" to invite another device, "enter a code" to join one) behind one small
+ * menu rather than two separate top-bar icons.
+ */
+@Composable
+private fun LinkDeviceAction(onShowMyCode: () -> Unit, onEnterCode: () -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+
+    IconButton(onClick = { expanded = true }) {
+        Icon(Icons.Filled.Devices, contentDescription = "Link a device")
+    }
+    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        DropdownMenuItem(
+            text = { Text("Show my code") },
+            onClick = {
+                expanded = false
+                onShowMyCode()
+            },
+        )
+        DropdownMenuItem(
+            text = { Text("Enter a code") },
+            onClick = {
+                expanded = false
+                onEnterCode()
+            },
+        )
+    }
 }
 
 @Composable

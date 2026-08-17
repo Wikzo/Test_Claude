@@ -2,6 +2,7 @@ package com.wikzo.todo.ui.tasklist
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.wikzo.todo.data.local.DeviceGroupStore
 import com.wikzo.todo.data.model.Task
 import com.wikzo.todo.data.repository.SyncGroupRepository
 import com.wikzo.todo.data.repository.TaskRepository
@@ -10,6 +11,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -37,6 +41,7 @@ private val taskComparator = compareBy<Task>(
 class TaskListViewModel @Inject constructor(
     private val taskRepository: TaskRepository,
     private val syncGroupRepository: SyncGroupRepository,
+    private val deviceGroupStore: DeviceGroupStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(TaskListUiState())
@@ -47,18 +52,32 @@ class TaskListViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             try {
-                val id = syncGroupRepository.ensureLocalGroup()
-                groupId = id
-                taskRepository.observeTasks(id).collect { snapshot ->
-                    _uiState.update {
-                        it.copy(
-                            isLoading = false,
-                            tasks = snapshot.tasks.sortedWith(taskComparator),
-                            isOffline = snapshot.isFromCache,
-                            isSyncing = snapshot.hasPendingWrites,
-                        )
+                // Guarantees a group id is persisted before observing below --
+                // otherwise a brand-new install would have nothing to collect yet.
+                syncGroupRepository.ensureLocalGroup()
+
+                // Observed reactively (rather than a one-shot ensureLocalGroup()
+                // read) so that pairing -- which overwrites the persisted group id
+                // while this screen's ViewModel is still alive in the nav back
+                // stack -- makes the task list switch over to the newly-joined
+                // group's tasks without needing the screen to be recreated.
+                deviceGroupStore.groupId
+                    .filterNotNull()
+                    .distinctUntilChanged()
+                    .flatMapLatest { id ->
+                        groupId = id
+                        taskRepository.observeTasks(id)
                     }
-                }
+                    .collect { snapshot ->
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                tasks = snapshot.tasks.sortedWith(taskComparator),
+                                isOffline = snapshot.isFromCache,
+                                isSyncing = snapshot.hasPendingWrites,
+                            )
+                        }
+                    }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
