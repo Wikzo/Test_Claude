@@ -19,3 +19,12 @@ export interface SyncGroupMember {
   joinedAt: Timestamp | null;
   lastSeenAt: Timestamp | null;
 }
+
+/**
+ * Result of the `createPairingCode` Cloud Function: a fresh code for this
+ * device's group, plus when it stops being claimable.
+ */
+export interface PairingCode {
+  code: string;
+  expiresAtMillis: number;
+}

@@ -15,6 +15,7 @@ interface UseTasksResult {
   isSyncing: boolean;
   toggleCompleted: (task: Task) => Promise<void>;
   deleteTask: (taskId: string) => Promise<void>;
+  refreshGroup: (newGroupId?: string) => void;
 }
 
 export function useTasks(): UseTasksResult {
@@ -24,12 +25,28 @@ export function useTasks(): UseTasksResult {
   const [isOffline, setIsOffline] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const mounted = useRef(true);
+  // Bumped whenever the app needs to re-resolve/re-subscribe to a group (e.g.
+  // right after this device pairs into a different group). `overrideGroupId`
+  // lets that call skip the localStorage/ensureLocalGroup round-trip, since
+  // the caller already knows the new id.
+  const [refreshToken, setRefreshToken] = useState(0);
+  const overrideGroupId = useRef<string | undefined>(undefined);
+
+  const refreshGroup = useCallback((newGroupId?: string) => {
+    overrideGroupId.current = newGroupId;
+    setRefreshToken((token) => token + 1);
+  }, []);
 
   useEffect(() => {
     mounted.current = true;
+    setLoading(true);
     let unsubscribe: (() => void) | undefined;
 
-    ensureLocalGroup()
+    const resolveGroupId = overrideGroupId.current
+      ? Promise.resolve(overrideGroupId.current)
+      : ensureLocalGroup();
+
+    resolveGroupId
       .then((id) => {
         if (!mounted.current) return;
         setGroupId(id);
@@ -50,7 +67,7 @@ export function useTasks(): UseTasksResult {
       mounted.current = false;
       unsubscribe?.();
     };
-  }, []);
+  }, [refreshToken]);
 
   const toggleCompleted = useCallback(
     async (task: Task) => {
@@ -68,5 +85,14 @@ export function useTasks(): UseTasksResult {
     [groupId],
   );
 
-  return { tasks, loading, groupId, isOffline, isSyncing, toggleCompleted, deleteTask };
+  return {
+    tasks,
+    loading,
+    groupId,
+    isOffline,
+    isSyncing,
+    toggleCompleted,
+    deleteTask,
+    refreshGroup,
+  };
 }

@@ -5,6 +5,7 @@ import {
   persistentLocalCache,
   persistentSingleTabManager,
 } from "firebase/firestore";
+import { getFunctions } from "firebase/functions";
 
 // TODO: replace with your real Firebase config.
 // Get this from Firebase Console -> Project settings -> General -> Your apps -> Web app.
@@ -29,3 +30,5 @@ export const db = initializeFirestore(app, {
     tabManager: persistentSingleTabManager(undefined),
   }),
 });
+
+export const functions = getFunctions(app);
