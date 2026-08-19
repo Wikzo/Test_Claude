@@ -9,6 +9,7 @@ import {
   serverTimestamp,
   Timestamp,
   updateDoc,
+  type DocumentData,
   type Unsubscribe,
 } from "firebase/firestore";
 import { auth, db } from "./firebaseConfig";
@@ -20,6 +21,30 @@ function tasksCollection(groupId: string) {
 
 function taskDoc(groupId: string, taskId: string) {
   return doc(db, "syncGroups", groupId, "tasks", taskId);
+}
+
+/**
+ * Maps a raw Firestore task document to a {@link Task}, filling in defaults
+ * for any field that's missing or malformed -- kept as a pure function
+ * (no Firestore SDK calls) so schema drift against /docs/data-model.md can be
+ * caught with a plain unit test instead of only ever exercised against a
+ * live/emulated backend. See taskRepository.test.ts.
+ */
+export function mapDocToTask(id: string, data: DocumentData): Task {
+  return {
+    id,
+    title: data.title,
+    notes: data.notes ?? null,
+    completed: data.completed ?? false,
+    completedAt: data.completedAt ?? null,
+    dueDate: data.dueDate ?? null,
+    priority: data.priority ?? "medium",
+    order: data.order ?? 0,
+    createdAt: data.createdAt ?? null,
+    updatedAt: data.updatedAt ?? null,
+    createdByUid: data.createdByUid ?? "",
+    updatedByUid: data.updatedByUid ?? "",
+  };
 }
 
 export interface TasksSnapshot {
@@ -41,23 +66,9 @@ export function subscribeToTasks(
 ): Unsubscribe {
   const q = query(tasksCollection(groupId), orderBy("createdAt", "asc"));
   return onSnapshot(q, { includeMetadataChanges: true }, (snapshot) => {
-    const tasks: Task[] = snapshot.docs.map((docSnap) => {
-      const data = docSnap.data();
-      return {
-        id: docSnap.id,
-        title: data.title,
-        notes: data.notes ?? null,
-        completed: data.completed ?? false,
-        completedAt: data.completedAt ?? null,
-        dueDate: data.dueDate ?? null,
-        priority: data.priority ?? "medium",
-        order: data.order ?? 0,
-        createdAt: data.createdAt ?? null,
-        updatedAt: data.updatedAt ?? null,
-        createdByUid: data.createdByUid ?? "",
-        updatedByUid: data.updatedByUid ?? "",
-      };
-    });
+    const tasks: Task[] = snapshot.docs.map((docSnap) =>
+      mapDocToTask(docSnap.id, docSnap.data()),
+    );
     callback({
       tasks,
       isFromCache: snapshot.metadata.fromCache,
