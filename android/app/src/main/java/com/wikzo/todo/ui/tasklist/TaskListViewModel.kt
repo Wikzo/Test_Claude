@@ -41,17 +41,6 @@ data class TaskListUiState(
  */
 data class CelebrationEvent(val streak: Int)
 
-/**
- * Incomplete tasks first, then by priority (HIGH, MEDIUM, LOW -- the enum's
- * declaration order), then by due date (soonest first, undated tasks last).
- * Completed tasks always sort after incomplete ones regardless of the above.
- */
-private val taskComparator = compareBy<Task>(
-    { it.completed },
-    { it.priority.ordinal },
-    { it.dueDate?.seconds ?: Long.MAX_VALUE },
-)
-
 @HiltViewModel
 class TaskListViewModel @Inject constructor(
     private val taskRepository: TaskRepository,
