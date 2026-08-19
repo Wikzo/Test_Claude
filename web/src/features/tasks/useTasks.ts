@@ -51,11 +51,16 @@ export function useTasks(): UseTasksResult {
   const [refreshToken, setRefreshToken] = useState(0);
   const overrideGroupId = useRef<string | undefined>(undefined);
 
-  // Previous remaining-incomplete count, used to detect the exact >0 -> 0
-  // transition. `null` means "unknown yet" -- the first snapshot after a
-  // (re)subscribe only seeds this value, it never counts as a transition
-  // (otherwise an already-empty list would "celebrate" on every load).
+  // Previous remaining-incomplete count and total task count, used to detect
+  // the exact >0 -> 0 *completion* transition. `null` means "unknown yet" --
+  // the first snapshot after a (re)subscribe only seeds these values, it
+  // never counts as a transition (otherwise an already-empty list would
+  // "celebrate" on every load). Total count is tracked alongside remaining
+  // so that deleting the last remaining task -- which also drives remaining
+  // to 0, but isn't a "completed everything" moment -- doesn't celebrate:
+  // only a same-total-count transition (a pure completed-flag flip) does.
   const prevRemaining = useRef<number | null>(null);
+  const prevTotal = useRef<number | null>(null);
 
   const refreshGroup = useCallback((newGroupId?: string) => {
     overrideGroupId.current = newGroupId;
@@ -66,6 +71,7 @@ export function useTasks(): UseTasksResult {
     mounted.current = true;
     setLoading(true);
     prevRemaining.current = null;
+    prevTotal.current = null;
     let unsubscribeTasks: (() => void) | undefined;
     let unsubscribeStreak: (() => void) | undefined;
 
@@ -91,10 +97,20 @@ export function useTasks(): UseTasksResult {
           setLoading(false);
 
           const remainingNow = snapshot.tasks.filter((t) => !t.completed).length;
-          const previous = prevRemaining.current;
+          const totalNow = snapshot.tasks.length;
+          const previousRemaining = prevRemaining.current;
+          const previousTotal = prevTotal.current;
           prevRemaining.current = remainingNow;
+          prevTotal.current = totalNow;
 
-          if (previous !== null && previous > 0 && remainingNow === 0) {
+          const justCompletedEverything =
+            previousRemaining !== null &&
+            previousTotal !== null &&
+            previousRemaining > 0 &&
+            remainingNow === 0 &&
+            totalNow === previousTotal;
+
+          if (justCompletedEverything) {
             setCelebrationToken((token) => token + 1);
             recordAllTasksCleared(id).catch((error) => {
               console.error("Failed to record streak", error);

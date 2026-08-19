@@ -66,7 +66,12 @@ class TaskListViewModel @Inject constructor(
     // Null until the first real snapshot arrives, so the very first emission --
     // which may itself already be an empty list -- never reads as a completion
     // transition. Only set once we've actually seen at least one snapshot.
+    // Total count is tracked alongside incomplete count so that deleting the
+    // last remaining task -- which also drives incompleteCount to 0, but
+    // isn't a "completed everything" moment -- doesn't celebrate: only a
+    // same-total-count transition (a pure completed-flag flip) does.
     private var previousIncompleteCount: Int? = null
+    private var previousTotalCount: Int? = null
 
     init {
         viewModelScope.launch {
@@ -89,13 +94,17 @@ class TaskListViewModel @Inject constructor(
                         // fresh context for the >0-to-0 transition below -- don't
                         // let a stale count from the previous group carry over.
                         previousIncompleteCount = null
+                        previousTotalCount = null
                         taskRepository.observeTasks(id)
                     }
                     .collect { snapshot ->
                         val sortedTasks = snapshot.tasks.sortedWith(taskComparator)
                         val incompleteCount = sortedTasks.count { !it.completed }
-                        val previousCount = previousIncompleteCount
+                        val totalCount = sortedTasks.size
+                        val previousIncomplete = previousIncompleteCount
+                        val previousTotal = previousTotalCount
                         previousIncompleteCount = incompleteCount
+                        previousTotalCount = totalCount
 
                         _uiState.update {
                             it.copy(
@@ -107,7 +116,12 @@ class TaskListViewModel @Inject constructor(
                             )
                         }
 
-                        if (previousCount != null && previousCount > 0 && incompleteCount == 0) {
+                        val justCompletedEverything = previousIncomplete != null &&
+                            previousTotal != null &&
+                            previousIncomplete > 0 &&
+                            incompleteCount == 0 &&
+                            totalCount == previousTotal
+                        if (justCompletedEverything) {
                             onAllTasksCleared()
                         }
                     }
